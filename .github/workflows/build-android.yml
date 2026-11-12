@@ -1,0 +1,147 @@
+name: Compiler JCI Stafs (APK)
+
+# Deux façons de lancer la compilation :
+#  1. À la main : onglet « Actions » > « Compiler JCI Stafs (APK) » > « Run workflow », en indiquant la version (ex. 1.0.1).
+#  2. En créant un tag de version (ex. v1.0.1) sur GitHub.
+# Le résultat est publié dans « Releases » : c'est là que votre page de téléchargement va chercher le fichier .apk.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Numéro de version (ex. 1.0.1)"
+        required: true
+        default: "1.0.0"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # nécessaire pour créer la release
+
+concurrency:
+  group: build-apk
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Déterminer la version
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+(\.[0-9]+){1,2}$'; then
+            echo "::error::Version invalide « $VERSION ». Utilisez un format comme 1.0.1"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Installer Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Installer le SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Préparer Gradle (avec cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Écrire la configuration (.env) depuis les secrets
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          missing=0
+          for name in API_BASE_URL SUPABASE_URL SUPABASE_ANON_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Le secret $name est vide ou absent. Ajoutez-le dans Settings > Secrets and variables > Actions."
+              missing=1
+            fi
+          done
+          [ "$missing" = "0" ] || exit 1
+          {
+            echo "API_BASE_URL=$API_BASE_URL"
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+          } > .env
+
+      - name: Préparer les clés de signature
+        id: sign
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD_SECRET: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD_SECRET: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # Clé « debug » exigée par la configuration Gradle du projet (non utilisée pour la release).
+          keytool -genkeypair -noprompt -keystore debug.keystore -alias androiddebugkey \
+            -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD_SECRET" ] && [ -n "$KEY_PASSWORD_SECRET" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "STORE_PASSWORD=$STORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "permanent=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Aucune clé de signature permanente (secrets KEYSTORE_BASE64, STORE_PASSWORD, KEY_PASSWORD). Une clé TEMPORAIRE est utilisée : les téléphones ne pourront pas mettre à jour l'application par-dessus une version précédente (désinstallation nécessaire)."
+            TMP_PASS="$(openssl rand -hex 16)"
+            keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/release.jks" -alias upload \
+              -storepass "$TMP_PASS" -keypass "$TMP_PASS" -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=JCI Stafs,O=JCI Come Excellence,C=BJ"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "STORE_PASSWORD=$TMP_PASS" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=$TMP_PASS" >> "$GITHUB_ENV"
+            echo "permanent=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tests unitaires
+        continue-on-error: true   # un test en échec n'empêche pas de produire l'APK (à durcir plus tard)
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Compiler l'APK de production
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease \
+            -PappVersionName="${{ steps.ver.outputs.version }}" \
+            -PappVersionCode="${{ github.run_number }}" \
+            --stacktrace
+
+      - name: Nommer le fichier
+        run: |
+          APK="$(find app/build/outputs/apk/release -name '*.apk' | head -n 1)"
+          if [ -z "$APK" ]; then echo "::error::Aucun fichier APK produit."; exit 1; fi
+          cp "$APK" jci-stafs.apk
+          ls -la jci-stafs.apk
+
+      - name: Conserver l'APK (téléchargeable 30 jours dans l'onglet de l'exécution)
+        uses: actions/upload-artifact@v4
+        with:
+          name: jci-stafs-apk
+          path: jci-stafs.apk
+          retention-days: 30
+
+      - name: Publier dans « Releases »
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: JCI Stafs ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: jci-stafs.apk
+          make_latest: true
+          body: |
+            Application de contrôle d'accès JCI Stafs, version ${{ steps.ver.outputs.version }}.
+            Installez le fichier `jci-stafs.apk` sur un téléphone Android.

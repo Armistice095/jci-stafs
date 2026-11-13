@@ -123,7 +123,7 @@ fun LoginScreen(
             .fillMaxWidth()
             .height(300.dp)
             .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
-            .background(Brush.linearGradient(listOf(JciNavyLight, JciNavy)))
+            .background(Brush.linearGradient(listOf(JciNavy, JciNavyLight)))
         ) {
           // Coins de viseur décoratifs, très discrets
           Canvas(modifier = Modifier.fillMaxSize()) {

@@ -462,7 +462,7 @@ fun ScannerScreen(
       }
     }
 
-    // 4. Bottom Panel: Entrées, Counter, Progress bar, Saisir un numéro de billet
+    // 4. Bottom Panel: Entrées, Counter, Progress bar, Saisir le numéro
     Column(
       modifier = Modifier
         .align(Alignment.BottomCenter)
@@ -538,7 +538,7 @@ fun ScannerScreen(
 
           Spacer(modifier = Modifier.height(14.dp))
 
-          // Button: « Saisir un numéro de billet » (height 48dp, background #F4F6FB)
+          // Button: « Saisir le numéro » (height 48dp, background #F4F6FB)
           Button(
             onClick = { viewModel.setManualInputDialogVisible(true) },
             colors = ButtonDefaults.buttonColors(
@@ -561,10 +561,12 @@ fun ScannerScreen(
               )
               Spacer(modifier = Modifier.width(8.dp))
               Text(
-                text = "Saisir un numéro de billet",
+                text = "Saisir le numéro",
                 color = JciNavy,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp
+                fontSize = 14.sp,
+                maxLines = 1,
+                softWrap = false
               )
             }
           }

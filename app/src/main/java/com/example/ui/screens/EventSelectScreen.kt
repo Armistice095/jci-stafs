@@ -342,7 +342,6 @@ fun FeaturedEventCard(
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.Top
     ) {
       // Pastille « Prochain événement »
@@ -366,33 +365,6 @@ fun FeaturedEventCard(
             color = Color(0xFF1565C0),
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
-          )
-        }
-      }
-
-      // Badge date (marine) : « NOV » / « 14 »
-      Surface(
-        color = JciNavy,
-        shape = RoundedCornerShape(16.dp)
-      ) {
-        Column(
-          modifier = Modifier
-            .size(width = 60.dp, height = 64.dp),
-          horizontalAlignment = Alignment.CenterHorizontally,
-          verticalArrangement = Arrangement.Center
-        ) {
-          Text(
-            text = DateFormats.monthBadge(event.startsAt),
-            color = Color(0xFFC9D3F7),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp
-          )
-          Text(
-            text = DateFormats.dayBadge(event.startsAt),
-            color = Color.White,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.ExtraBold
           )
         }
       }
